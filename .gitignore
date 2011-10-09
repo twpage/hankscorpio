@@ -1,5 +1,7 @@
 *.pyc
-!.gitignore
 *.wpr
 *.wpu
 *.lnk
+*.cfg
+!pybot.cfg
+!.gitignore
