@@ -5,24 +5,21 @@ Todd Page
 Telnet Interface between PennMUSH and Python
 """
 
-import telnetlib, ConfigParser, time, os, imp
-CONST_PYBOT_CODE = "PYBOT5731"
+import telnetlib, ConfigParser, time, os, imp, random
+
 class Pybot:
     def __init__(self, host, port, player, password):
         self.host = host
         self.port = port
         self.player = player
         self.password = password
+        self.secret_code = None
         
         ## Modules
         self.modules_dir = os.path.join(os.getcwd(), "plugins")
         self.plugin_scan_dct = {}
         self.plugin_dct = {}
         self.scanModules()
-        
-        ## callbacks
-        self.callback_key = 0
-        self.callback_dct = {}
         
         ## telnet vars
         self.ShouldQuit = False
@@ -32,9 +29,12 @@ class Pybot:
         tn = telnetlib.Telnet(self.host, self.port)
         self.telnet = tn
         
-        self.sendToTelnet("ch \"%s\" %s" % (self.player, self.password))
+        self.sendToTelnet(str.format("ch \"{0}\" {1}", self.player, self.password))
         self.sendToTelnet("p hazard=I connected at [time()]")
-        print "pybot has connected"
+        self.echo("pybot has connected")
+        
+        self.secret_code = "PYBOT" + str(random.randint(1, 9999999))
+        self.sendToTelnet(str.format("&PYBOT_CODE me={0}", self.secret_code))
         
         self.listen()
         self.telnet.close()
@@ -47,12 +47,15 @@ class Pybot:
             text = self.telnet.read_until("\n")
             text = text.strip()
             print "%s" % text
-            if text.startswith(CONST_PYBOT_CODE):
+            if text.startswith(self.secret_code):
                 command_lst = text.split(":")
                 cmd = command_lst[1]
                 args_lst = command_lst[2:]
                 self.processCommand(cmd, *args_lst)
 
+    def echo(self, text):
+        print str.format("->{0}", text)
+        
     def processCommand(self, cmd_name, *args):
         #print "-> got command |%s|" % cmd_name
         if cmd_name == "quit":
@@ -77,56 +80,12 @@ class Pybot:
         elif cmd_name == "scan":
             self.scanModules()
             
-        elif cmd_name == "bulkattr":
-            ## xxxxx:bulkattr:TOKEN1:TOKEN2:TOKEN3
-            ## where TOKEN = DBREF^ATTR^VALUE
-            callback_key = args[0]
-            tokens = args[1:]
-            self.handleBulkAttributeResponse(callback_key, tokens)
-            
         ## otherwise, try to execute code from a plugin
         elif cmd_name in self.plugin_dct.keys():
             self.plugin_dct[cmd_name].main(args)
 
         return
 
-    def handleBulkAttributeResponse(self, callback_key, attr_token_lst):
-        """
-        Receives a list of MUSH tokens like DBREF^ATTR^VALUE
-        and loads them into the local attribute database
-        """
-        data_dct = {}
-        for token in attr_token_lst:
-            dbref, attribute, value = token.split("^")
-            data_dct[(dbref, attribute)] = value
-        
-        if callback_key in self.callback_dct:
-            self.doPluginDataCallback(callback_key, data_dct)
-            
-        return True
-            
-    def sendBulkAttributeRequest(self, callback_key, request_lst):
-        """
-        Send a pair of 3-tuples (dbref, attribute, <optional request code>)
-        """
-        mush_text_lst = []
-        for (dbref, attribute, req_code) in request_lst:
-            mush_text = "%(dbref)s^%(attribute)s^" % locals()
-            if req_code:
-                req_code = req_code.replace("#", dbref)
-                mush_text += "[%(req_code)s]" % locals()
-            else:
-                mush_text += "[get(%(dbref)s/%(attribute)s)]" % locals()
-                
-            mush_text_lst.append(mush_text)
-            
-        bulk_attr_text = str.format("th {0}:bulkattr:{1}:{2}",
-                                    CONST_PYBOT_CODE,
-                                    str(callback_key),
-                                    ":".join(mush_text_lst))
-        #bulk_attr_text = "th PYBOT5731:bulkattr:" + str(callback_key) + ":" + ":".join(mush_text_lst)
-        self.sendToTelnet(bulk_attr_text)
-        
     def scanModules(self):
         for filename in os.listdir(self.modules_dir):
             if not filename.endswith(".py"): continue
@@ -140,42 +99,68 @@ class Pybot:
             stored_modified = self.plugin_scan_dct.get(filename, 0)
             
             if modified > stored_modified:
-                print "importing module %s" % filename
+                self.echo(str.format("importing module {0}", filename))
                 module = imp.load_source(mod_name, mod_file)
                 plugin = module.pybot_start(self)
                 self.plugin_scan_dct[filename] = modified
                 self.plugin_dct[mod_name] = plugin
                 
-    def startPluginDataCallback(self, callback_fn, args):
-        request_lst = callback_fn(*args, DataRequest={}) ## function should return list
-        
-        ## TODO: probably a better way to make keys
-        self.callback_key += 1
-        
-        callback_key = str(self.callback_key)
-        self.callback_dct[callback_key] = (callback_fn, args)
-        
-        self.sendBulkAttributeRequest(callback_key, request_lst)
-        
-    def doPluginDataCallback(self, callback_key, data_dct):
-        callback_fn = self.callback_dct[callback_key][0]
-        callback_args = self.callback_dct[callback_key][1]
-        del self.callback_dct[callback_key]
-        
-        callback_fn(*callback_args, DataRequest=data_dct)
-        
     def getFromMUSH(self, mush_text):
+        """
+        Get any generic data from the MUSH
+        
+        Sends any given text to the MUSH and WAITS on the 
+        telnet response
+        """
         self.sendToTelnet(mush_text)
-        text = self.telnet.read_until("\n")
-        text = text.strip()
-        print "%s" % text
-        return text
+        resp_text = self.telnet.read_until("\n")
+        resp_text = resp_text.strip() ## clear off weird whitespace
+        self.echo(resp_text)
+        
+        return resp_text
     
+    def getBulkDataFromMUSH(self, request_lst):
+        """
+        Get a bunch of attribute data from the MUSH at once
+        
+        Given a list of 2-tuples (dbref, attr),
+        return a data dictionary of (dbref, attr) -> value from MUSH
+        
+        By default, performs a simple [get(dbref/attr)] lookup on the MUSH
+        Optionally, pass in 3-tuple (dbref, attr, code) code will pass dbref in as {0}
+        """
+        ## construct a request string for Pybot to read
+        request_token_lst = []
+        for request_tpl in request_lst:
+            dbref = request_tpl[0]
+            attr = request_tpl[1]
+            
+            if len(request_tpl) == 3:
+                mush_code = "[" + str.format(request_tpl[2], dbref) + "]"
+            else:
+                mush_code = str.format("[get({0}/{1}]", dbref, attr)
+                
+            req_token = str.format("{0}^{1}^{2}", dbref, attr, mush_code)
+            request_token_lst.append(req_token)
+            
+        mush_request_text = "th " + ":".join(request_token_lst)
+        
+        ## send this request to the MUSH ('think' the results)
+        mush_response_text = self.getFromMUSH(mush_request_text)
+        
+        ## parse the results into a usable data dictionary
+        data_dct = {}
+        
+        for resp_token in mush_response_text.split(":"):
+            dbref, attribute, value = resp_token.split("^")
+            data_dct[(dbref, attribute)] = value
+        
+        return data_dct
 
 def main():
     config = ConfigParser.ConfigParser()
     config.optionxform = str
-    config.read("pybot.cfg")
+    config.read("tf2005.cfg")
     
     pybot = initPybotFromConfigFile(config)
     pybot.run()

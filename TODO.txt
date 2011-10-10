@@ -1,0 +1,5 @@
+do we need to worry about data requests getting interrupted (re-add callbacks?)
+built-in function calls for NAME() ROOM() TACS STUFF?
+better error handling -- no disconnecting!
+
+xx make enactor first arg of everything

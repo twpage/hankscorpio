@@ -22,9 +22,6 @@ class PybotPlugin:
     def sendToMUSH(self, msg):
         self.pybot.sendToTelnet(msg)
         
-    def callback(self, callback_fn, *args):
-        self.pybot.startPluginDataCallback(callback_fn, args)
-        
     def mushRemit(self, room_dbref, msg):
         self.sendToMUSH("th [remit(%(room_dbref)s, %(msg)s)]" % locals())
         
@@ -45,14 +42,18 @@ class PybotPlugin:
     def getFromMUSH(self, mush_text):
         return self.pybot.getFromMUSH(mush_text)
     
+    def getMUSHFuncFmt(self, unformat_mush_text, *args):
+        return self.getMUSHFunc(str.format(unformat_mush_text, *args))
+
     def getMUSHFunc(self, mush_text):
         return self.pybot.getFromMUSH("th [" + mush_text + "]")
     
-    def getMUSHAttr(self, pairs_lst):
+    def getMUSHAttr(self, request_pairs_lst):
         """
         Given list of 2-tuple (dbref, attrib) pairs, return value dictionary as string
         """
-        attr_data_dct = self.pybot.
+        attr_data_dct = self.pybot.getBulkDataFromMUSH(request_pairs_lst)
+        return attr_data_dct
         
     
 class DataCollection:
