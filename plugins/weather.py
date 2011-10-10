@@ -35,5 +35,5 @@ class Weather(PybotPlugin):
         temp_c = str(google_result["current_conditions"]["temp_c"])
         city = str(google_result["forecast_information"]["city"])
         
-        msg = "It is %(condition)s and %(temp_f)sF / %(temp_c)sC in %(city)s" % locals()
+        msg = "It is %(condition)s and %(temp_f)sF (%(temp_c)sC) in %(city)s" % locals()
         self.mushPemit(dbref, msg)

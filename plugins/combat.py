@@ -25,6 +25,15 @@ class Combat(PybotPlugin):
         if cmd == "attack":
             self.doAttack(*args)
             
+    def locate(self, looker_dbref, name):
+        """
+        Performs a locate() to return the DBref# associated with a given name
+        """
+        code = str.format("locate2({0}, {1})", looker_dbref, name)
+        dbref = self.getMUSHFunc(code)
+        
+        return dbref
+        
     def doAttack(self, attacker_dbref, defender_name, attack_name):
         defender_dbref = self.getMUSHFuncFmt("pmatch(*{0})", defender_name)
         

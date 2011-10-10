@@ -5,7 +5,7 @@ Todd Page
 Telnet Interface between PennMUSH and Python
 """
 
-import telnetlib, ConfigParser, time, os, imp, random
+import telnetlib, ConfigParser, time, os, imp, random, re
 
 class Pybot:
     def __init__(self, host, port, player, password):
@@ -14,7 +14,8 @@ class Pybot:
         self.player = player
         self.password = password
         self.secret_code = None
-        
+        self.command_match_rx = re.compile("\[(.*)\((#\d+)\)'s (.*)\((#\d+)\)->(.*)\] (PYBOT\d+):(\w+)(:.*|)")
+
         ## Modules
         self.modules_dir = os.path.join(os.getcwd(), "plugins")
         self.plugin_scan_dct = {}
@@ -46,11 +47,21 @@ class Pybot:
         while not self.ShouldQuit:		
             text = self.telnet.read_until("\n")
             text = text.strip()
-            print "%s" % text
-            if text.startswith(self.secret_code):
-                command_lst = text.split(":")
-                cmd = command_lst[1]
-                args_lst = command_lst[2:]
+            self.echo(text)
+            
+            match = self.command_match_rx.search(text)
+            if match:
+                owner_name, owner_dbref, en_name, en_dbref, bot_name, secret_code, cmd, arg_text = match.groups()
+                if arg_text:
+                    args_lst = arg_text[1:].split(":")
+                else:
+                    args_lst = []
+                    
+                ## double check code
+                if secret_code != self.secret_code:
+                    self.echo("Warning -- Received wrong secret code!")
+                    return
+                              
                 self.processCommand(cmd, *args_lst)
 
     def echo(self, text):
