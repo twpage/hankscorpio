@@ -1,0 +1,7 @@
+hankscorpio 
+
+Python + Simple Data API + PennMUSH Bot
+
+Attempt to use a telnet bot to set up a simple API between PennMUSH and python, allowing for external python code to be executed in-game. 
+
+Just in case you were tired of debugging MUSHcode. (thought so!)
